@@ -1124,7 +1124,7 @@ int main(int argc, char **argv)
     if (open_fb() != 0) return 1;
     back = zwm_surface_new(fb.w, fb.h);
     const char *sw = getenv("ZWM_SOFTWARE");
-    if (!(sw && *sw == '1') && hw_init(fb.w, fb.h) == 0) { gpu = 1; fprintf(stderr, "zwm: composing on the GPU\n"); }
+    if (!(sw && *sw == '1') && hw_init(fb.w, fb.h) == 0) { gpu = 1; fprintf(stderr, "zwm: composing on the GPU (%s)\n", hw_name()); }
     con_fd = open("/dev/console", O_RDONLY | O_NONBLOCK);
     if (con_fd < 0 || ioctl(con_fd, KDSKBMODE, K_RAW) != 0) { perror("zwm: /dev/console raw mode"); restore(); return 1; }
     mouse_fd = open("/dev/mouse", O_RDONLY | O_NONBLOCK);
