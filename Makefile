@@ -63,11 +63,16 @@ $(LIB): $(LIB_OBJS)
 
 # Composing on the GPU needs zgl, which is built after zwm (it links
 # libzwm): the first build composes in software, `make install` again once
-# zgl is in the sysroot and zwm picks it up.
+# zgl is in the sysroot and zwm picks it up, with its backends: virgl
+# (libzgl) and the Adreno (libadreno, inside libvirgl).
 ZGL_LIBS := $(if $(wildcard $(LIBC)/lib/libzgl.a),$(LIBC)/lib/libzgl.a $(LIBC)/lib/libvirgl.a)
-HWCOMP   := $(BUILD)/server/$(if $(ZGL_LIBS),hwcomp,hwcomp_none).o
+HWCOMP   := $(if $(ZGL_LIBS),$(BUILD)/server/hwcomp.o $(BUILD)/server/hwcomp_gl.o $(BUILD)/server/hwcomp_adreno.o,$(BUILD)/server/hwcomp_none.o)
 
 $(BUILD)/server/hwcomp.o: server/hwcomp.c server/hwcomp.h
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -DHWCOMP_ZGL -c $< -o $@
+
+$(BUILD)/server/hwcomp_none.o: server/hwcomp.c server/hwcomp.h
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 

@@ -7,7 +7,8 @@ sic and ZAE don't know it exists; `make install` drops it into the sysroot's
 
 ```
 server/zwm.c    the server and window manager
-server/hwcomp.c composing on the GPU (zgl); hwcomp_none.c where there is none
+server/hwcomp*  composing on the GPU: hwcomp_gl.c (zgl on virgl),
+                hwcomp_adreno.c (a phone's Adreno), hwcomp.c picks one
 lib/            libzwm: the client side, and pixel-buffer drawing
 include/zwm.h   the protocol and the API
 ```
@@ -32,6 +33,16 @@ only when it changes). A GL client's window can be its GPU buffer itself
 no copy; `ZWM_S_FRAME` after each frame paces it (`zwm_wait_frame`), and
 the server composes at most 60 times a second. `ZWM_SOFTWARE=1` keeps the
 software path. `Ctrl+Alt+P` saves the screen to `/tmp/zwm-shot.ppm`.
+
+On a phone with an Adreno 6xx (`/dev/adrenogpu`, through zgl's libadreno)
+the server composes on its 2D engine instead, when there is no virgl: a
+back buffer in GPU memory gets the background, every window's content
+and the opaque part of its decoration as GPU copies; the engine cannot
+blend, so the CPU blends the shadow, antialiased corners and cursor once
+the GPU has drawn under them, and the GPU copies the frame to the screen.
+Clients stay on shared memory there (no GL). It checks its copies on a
+scratch buffer first and leaves the screen to software if they come out
+wrong.
 
 The screen follows the display: when `/dev/fb0` changes mode (a resized
 QEMU window) docks re-span the edges and windows are kept on screen.
