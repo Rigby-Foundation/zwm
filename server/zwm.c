@@ -88,6 +88,7 @@ static uint32_t next_id = 1;
 static int mx, my, mbuttons;                /* cursor */
 static int damage_x0, damage_y0, damage_x1, damage_y1;
 static int workarea_top, workarea_bottom;   /* rows docks have taken */
+static int safe_top;                        /* rows a camera cutout hides: docks go below them */
 static int quit;
 static int gpu;                             /* the GPU composites (hwcomp.c) */
 #define FRAME_MS 16                         /* ... at most this often: the display's pace */
@@ -489,7 +490,7 @@ static void set_focus(struct win *w)
 
 static void recompute_workarea(void)
 {
-    workarea_top = 0; workarea_bottom = fb.h;
+    workarea_top = safe_top; workarea_bottom = fb.h;
     for (struct win *w = bottom; w; w = w->above) {
         if (w->flags & ZWM_DOCK_TOP && w->y + w->h > workarea_top) workarea_top = w->y + w->h;
         if (w->flags & ZWM_DOCK_BOTTOM && w->y < workarea_bottom) workarea_bottom = w->y;
@@ -809,9 +810,16 @@ static void handle_msg(struct client *c, const struct zwm_hdr *h, const uint8_t 
         if (t) win_minimize(t);
         break;
     }
-    case ZWM_C_MAXIMIZE:
-        if (w) win_maximize(w);
+    case ZWM_C_MAXIMIZE: {
+        struct win *t = win_by_id_any(h->win);
+        if (t && decorated(t)) win_maximize(t);
         break;
+    }
+    case ZWM_C_CLOSE: {
+        struct win *t = win_by_id_any(h->win);
+        if (t) send_msg(t->owner, ZWM_S_CLOSE, t->id, NULL, 0);
+        break;
+    }
     case ZWM_C_DESTROY:
         if (w) win_destroy(w);
         break;
@@ -987,7 +995,8 @@ static void send_mouse(struct win *w, uint32_t kind, uint32_t buttons)
 static void mouse_event(const struct mouse_event *e)
 {
     damage(mx, my, 12 * S, 19 * S);
-    mx += e->dx * S; my += e->dy * S;                 /* the pointer moves in UI units */
+    if (e->flags & MOUSE_ABSOLUTE) { mx = e->dx; my = e->dy; }      /* a touchscreen: where the finger is */
+    else { mx += e->dx * S; my += e->dy * S; }                     /* the pointer moves in UI units */
     if (mx < 0) mx = 0; if (my < 0) my = 0;
     if (mx >= fb.w) mx = fb.w - 1; if (my >= fb.h) my = fb.h - 1;
     damage(mx, my, 12 * S, 19 * S);
@@ -1051,11 +1060,12 @@ static int open_fb(void)
     if (ioctl(fb.fd, FBIOGET_VSCREENINFO, &v) || ioctl(fb.fd, FBIOGET_FSCREENINFO, &f)) { perror("zwm: fb ioctl"); return -1; }
     if (v.bits_per_pixel != 32) { fprintf(stderr, "zwm: need a 32 bpp framebuffer (have %u)\n", v.bits_per_pixel); return -1; }
     fb.w = (int)v.xres; fb.h = (int)v.yres; fb.pitch = (int)f.line_length;
+    safe_top = (int)FB_SAFE_TOP(&v) < fb.h / 4 ? (int)FB_SAFE_TOP(&v) : 0;
     /* HiDPI: a panel at its real size gets everything drawn twice as big */
     const char *e = getenv("ZWM_SCALE");
     S = e && atoi(e) > 0 ? atoi(e) : fb.w >= 2000 ? 2 : 1;
     if (S > 2) S = 2;
-    fprintf(stderr, "zwm: %dx%d, ui scale %d\n", fb.w, fb.h, S);
+    fprintf(stderr, "zwm: %dx%d, ui scale %d, safe top %d\n", fb.w, fb.h, S, safe_top);
     /* the whole buffer, not just the current mode: a display that follows
      * its window (virtio-gpu) changes geometry on the same memory */
     size_t len = f.smem_len > (uint32_t)(fb.pitch * fb.h) ? f.smem_len : (size_t)fb.pitch * fb.h;
@@ -1126,7 +1136,7 @@ int main(int argc, char **argv)
     fcntl(listen_fd, F_SETFL, fcntl(listen_fd, F_GETFL) | O_NONBLOCK);
 
     mx = fb.w / 2; my = fb.h / 2;
-    workarea_top = 0; workarea_bottom = fb.h;
+    workarea_top = safe_top; workarea_bottom = fb.h;
     damage(0, 0, fb.w, fb.h);
     flush();
 

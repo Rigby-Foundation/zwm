@@ -38,8 +38,9 @@ enum {
     ZWM_C_DAMAGE,           /* zwm_m_rect: this part of the shared segment changed */
     ZWM_C_ACTIVATE,         /* header win = a window (any client's): raise it, restore it if minimized, focus it */
     ZWM_C_MINIMIZE,         /* - : hide the window until it is activated */
-    ZWM_C_MAXIMIZE,         /* - : toggle filling the work area */
+    ZWM_C_MAXIMIZE,         /* - : toggle filling the work area (any window: a panel's menu does it too) */
     ZWM_C_ATTACH_GPU,       /* zwm_m_attach_gpu: the window's pixels are this GPU resource (only if the hello says ZWM_HELLO_GPU); DAMAGE says when a frame is done */
+    ZWM_C_CLOSE,            /* header win = a window (any client's): ask its owner to close it (it gets ZWM_S_CLOSE) */
     /* server -> client */
     ZWM_S_CREATED = 0x100,  /* zwm_m_geom: the id is in the header */
     ZWM_S_KEY,              /* zwm_m_key */
@@ -124,7 +125,8 @@ void zwm_move(zwm *c, int win, int x, int y);
 void zwm_raise(zwm *c, int win);
 void zwm_activate(zwm *c, int win);         /* any window: raise, unminimize, focus (panels) */
 void zwm_minimize(zwm *c, int win);
-void zwm_maximize(zwm *c, int win);         /* toggles */
+void zwm_maximize(zwm *c, int win);         /* toggles; any window */
+void zwm_close(zwm *c, int win);            /* any window: its owner is asked to close it, as by the close box */
 
 /* Copies a w*h block of pixels (rows `stride` pixels apart) to (x, y) of
  * the window, over the socket. */
