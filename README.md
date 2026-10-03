@@ -33,6 +33,8 @@ only when it changes). A GL client's window can be its GPU buffer itself
 no copy; `ZWM_S_FRAME` after each frame paces it (`zwm_wait_frame`), and
 the server composes at most 60 times a second. `ZWM_SOFTWARE=1` keeps the
 software path. `Ctrl+Alt+P` saves the screen to `/tmp/zwm-shot.ppm`.
+On a phone the Power key turns the panel off and on (`/dev/panel`); while
+it is off touches are ignored and nothing is composed.
 
 On a phone with an Adreno 6xx (`/dev/adrenogpu`, through zgl's libadreno)
 the server composes on its 2D engine instead, when there is no virgl: a

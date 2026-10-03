@@ -93,6 +93,8 @@ static int quit;
 static int gpu;                             /* the GPU composites (hwcomp.c) */
 #define FRAME_MS 16                         /* ... at most this often: the display's pace */
 static int flush_wait_ms = -1;              /* poll timeout: a frame is due then */
+static int panel_fd = -1;                   /* /dev/panel: a phone's panel, which the Power key turns off */
+static int screen_off;                      /* then input is ignored and nothing is composed */
 
 /* drag state */
 static struct { struct win *w; int mode; int dx, dy; } drag;   /* mode 1 = move, 2 = resize */
@@ -415,6 +417,7 @@ static void send_msg(struct client *c, uint32_t type, uint32_t win, const void *
 static void flush(void)
 {
     if (windows_dirty) send_window_list();
+    if (screen_off) { flush_wait_ms = -1; return; }     /* the damage waits for the screen */
     if (damage_x1 <= damage_x0 || damage_y1 <= damage_y0) return;
     if (gpu) {                              /* the whole screen: it is cheap there */
         static struct timespec last;
@@ -908,6 +911,16 @@ static void switch_window(int backwards)
     }
 }
 
+/* The Power key: the panel off (and the touchscreen ignored) or back on. */
+static void toggle_screen(void)
+{
+    if (panel_fd < 0) return;
+    const char *cmd = screen_off ? "on\n" : "off\n";
+    if (write(panel_fd, cmd, strlen(cmd)) < 0) { perror("zwm: /dev/panel"); return; }
+    screen_off = !screen_off;
+    if (!screen_off) damage(0, 0, fb.w, fb.h);
+}
+
 static void screenshot(void);
 static void key_event(uint8_t raw)
 {
@@ -916,6 +929,7 @@ static void key_event(uint8_t raw)
     uint8_t sc = raw & 0x7F;
     int e0 = k_e0; k_e0 = 0;
     uint32_t sym = 0;
+    if (screen_off && !(e0 && sc == 0x5E)) return;      /* only Power wakes it */
     if (e0) {
         switch (sc) {
         case 0x48: sym = ZWM_KEY_UP; break;    case 0x50: sym = ZWM_KEY_DOWN; break;
@@ -926,6 +940,7 @@ static void key_event(uint8_t raw)
         case 0x1D: sym = ZWM_KEY_CTRL; k_ctrl = down; break;
         case 0x38: sym = ZWM_KEY_ALT; k_alt = down; break;
         case 0x1C: sym = '\n'; break;
+        case 0x5E: if (down) toggle_screen(); return;    /* Power (a phone's button) */
         default: return;
         }
     } else {
@@ -987,6 +1002,7 @@ static void send_mouse(struct win *w, uint32_t kind, uint32_t buttons)
 
 static void mouse_event(const struct mouse_event *e)
 {
+    if (screen_off) return;                             /* a finger on the dark screen is nothing */
     damage(mx, my, 12 * S, 19 * S);
     if (e->flags & MOUSE_ABSOLUTE) { mx = e->dx; my = e->dy; }      /* a touchscreen: where the finger is */
     else { mx += e->dx * S; my += e->dy * S; }                     /* the pointer moves in UI units */
@@ -1121,6 +1137,7 @@ int main(int argc, char **argv)
     con_fd = open("/dev/console", O_RDONLY | O_NONBLOCK);
     if (con_fd < 0 || ioctl(con_fd, KDSKBMODE, K_RAW) != 0) { perror("zwm: /dev/console raw mode"); restore(); return 1; }
     mouse_fd = open("/dev/mouse", O_RDONLY | O_NONBLOCK);
+    panel_fd = open("/dev/panel", O_WRONLY | O_CLOEXEC);
     if (mouse_fd < 0) fprintf(stderr, "zwm: no /dev/mouse, keyboard only\n");
 
     listen_fd = socket(AF_UNIX, SOCK_STREAM, 0);
