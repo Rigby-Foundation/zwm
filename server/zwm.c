@@ -1078,7 +1078,7 @@ static int open_fb(void)
     safe_top = (int)FB_SAFE_TOP(&v) < fb.h / 4 ? (int)FB_SAFE_TOP(&v) : 0;
     /* HiDPI: a panel at its real size gets everything drawn twice as big */
     const char *e = getenv("ZWM_SCALE");
-    S = e && atoi(e) > 0 ? atoi(e) : fb.w >= 2000 ? 2 : 1;
+    S = e && atoi(e) > 0 ? atoi(e) : (fb.w >= 2000 || fb.h >= 2000) ? 2 : 1;
     if (S > 2) S = 2;
     fprintf(stderr, "zwm: %dx%d, ui scale %d, safe top %d\n", fb.w, fb.h, S, safe_top);
     /* the whole buffer, not just the current mode: a display that follows
