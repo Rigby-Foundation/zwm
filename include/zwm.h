@@ -51,6 +51,7 @@ enum {
     ZWM_S_WINDOWS,          /* zwm_m_window[]: every decorated window, to ZWM_TASKBAR clients, whenever it changes */
     ZWM_S_HELLO,            /* zwm_m_hello, first thing after connecting: the screen and the UI scale */
     ZWM_S_FRAME,            /* - : a frame with this window's GPU content went on screen (pacing; libzwm counts these) */
+    ZWM_S_TAKEN,            /* - : the server copied what a DAMAGE named out of the shared segment; it may be drawn again (libzwm counts these) */
 };
 
 /* window flags */
@@ -72,6 +73,7 @@ struct zwm_m_window { uint32_t id; uint32_t state; char title[64]; char exe[128]
 struct zwm_m_attach_gpu { uint32_t res; int32_t w, h; };     /* a host resource (sic_gl_buffer), B8G8R8A8, rows bottom-up */
 struct zwm_m_hello  { int32_t screen_w, screen_h; int32_t scale; uint32_t flags; };
 #define ZWM_HELLO_GPU     1     /* the server composites on the GPU: windows may be GPU resources */
+#define ZWM_HELLO_TAKEN   2     /* the server answers DAMAGE on a shared segment with ZWM_S_TAKEN */
 /* ZWM_S_WINDOWS entries, bottom to top; exe = the program behind it */
 #define ZWM_WIN_FOCUSED   1
 #define ZWM_WIN_MINIMIZED 2
@@ -212,7 +214,9 @@ uint32_t *zwm_icon_load(const char *elf_path, int *w, int *h);
 uint32_t *zwm_icon_file(const char *path, int *w, int *h);
 void      zwm_icon_draw(zwm_surface *s, int x, int y, int size, const uint32_t *pix, int w, int h);
 
-/* Send the whole surface, or a part of it, to the window. */
+/* Send the whole surface, or a part of it, to the window. A shared one
+ * returns once the server has copied the part out, so the next frame can
+ * be drawn into it right away without the screen showing half of it. */
 void  zwm_flush(zwm *c, int win, const zwm_surface *s);
 void  zwm_flush_rect(zwm *c, int win, const zwm_surface *s, int x, int y, int w, int h);
 

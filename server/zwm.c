@@ -260,18 +260,26 @@ static void compose_win(const struct win *w)
     int x1 = w->x + w->w < damage_x1 ? w->x + w->w : damage_x1, y1 = w->y + w->h < damage_y1 ? w->y + w->h : damage_y1;
     for (int y = y0; y < y1 && x1 > x0; y++) {
         int wy = y - w->y, wx0 = x0 - w->x, n = x1 - x0;
-        uint32_t *dst = back->pix + (size_t)y * back->w + x0;
-        if (w->shm) {
-            /* the shared segment may be smaller than the window after a resize */
-            int avail = wy < w->shm_h ? (w->shm_w > wx0 ? w->shm_w - wx0 : 0) : 0;
-            if (avail > n) avail = n;
-            if (avail > 0) memcpy(dst, w->shm + (size_t)wy * w->shm_stride + wx0, (size_t)avail * 4);
-            for (int i = avail > 0 ? avail : 0; i < n; i++) dst[i] = ZWM_COL_WINDOW;
-        } else {
-            memcpy(dst, w->pix + (size_t)wy * w->w + wx0, (size_t)n * 4);
-        }
+        memcpy(back->pix + (size_t)y * back->w + x0, w->pix + (size_t)wy * w->w + wx0, (size_t)n * 4);
     }
     if (decorated(w)) corners_round(&corners, fx, fy, fw, fh);
+}
+
+/* Part of the client's shared segment, copied into the window's own pixels
+ * when the client says it is drawn: frames are composed from those, so a
+ * client already drawing its next frame is never seen half done. The
+ * segment may be smaller than the window (a resize in flight): the rest is plain. */
+static void take_shm(struct win *w, int x, int y, int cw, int ch)
+{
+    int x0 = x < 0 ? 0 : x, y0 = y < 0 ? 0 : y;
+    int x1 = x + cw > w->w ? w->w : x + cw, y1 = y + ch > w->h ? w->h : y + ch;
+    for (int r = y0; r < y1 && x1 > x0; r++) {
+        uint32_t *dst = w->pix + (size_t)r * w->w + x0;
+        int n = x1 - x0, avail = r < w->shm_h ? (w->shm_w > x0 ? w->shm_w - x0 : 0) : 0;
+        if (avail > n) avail = n;
+        if (avail > 0) memcpy(dst, w->shm + (size_t)r * w->shm_stride + x0, (size_t)avail * 4);
+        for (int i = avail > 0 ? avail : 0; i < n; i++) dst[i] = ZWM_COL_WINDOW;
+    }
 }
 
 static void win_detach_shm(struct win *w)
@@ -320,24 +328,7 @@ static void gpu_content(struct win *w)
     int x1 = w->cd_x1 > w->w ? w->w : w->cd_x1, y1 = w->cd_y1 > w->h ? w->h : w->cd_y1;
     w->cd_x0 = w->cd_y0 = w->cd_x1 = w->cd_y1 = 0;
     if (w->gpu_res || x1 <= x0 || y1 <= y0) return;
-    int cw = x1 - x0, ch = y1 - y0;
-    if (!w->shm) { hw_win_content(w->hw, w->w, w->h, x0, y0, cw, ch, w->pix + (size_t)y0 * w->w + x0, w->w); return; }
-    if (x1 <= w->shm_w && y1 <= w->shm_h) {     /* all in the shared segment */
-        hw_win_content(w->hw, w->w, w->h, x0, y0, cw, ch, w->shm + (size_t)y0 * w->shm_stride + x0, w->shm_stride);
-        return;
-    }
-    /* the segment is smaller than the window (a resize in flight): the rest is plain */
-    uint32_t *tmp = malloc((size_t)cw * ch * 4);
-    if (!tmp) return;
-    for (int y = y0; y < y1; y++) {
-        uint32_t *dst = tmp + (size_t)(y - y0) * cw;
-        int avail = y < w->shm_h ? (w->shm_w > x0 ? w->shm_w - x0 : 0) : 0;
-        if (avail > cw) avail = cw;
-        if (avail > 0) memcpy(dst, w->shm + (size_t)y * w->shm_stride + x0, (size_t)avail * 4);
-        for (int i = avail > 0 ? avail : 0; i < cw; i++) dst[i] = ZWM_COL_WINDOW;
-    }
-    hw_win_content(w->hw, w->w, w->h, x0, y0, cw, ch, tmp, cw);
-    free(tmp);
+    hw_win_content(w->hw, w->w, w->h, x0, y0, x1 - x0, y1 - y0, w->pix + (size_t)y0 * w->w + x0, w->w);
 }
 
 /* The decoration as a texture with alpha, redrawn only when it looks
@@ -771,6 +762,7 @@ static void handle_msg(struct client *c, const struct zwm_hdr *h, const uint8_t 
         win_detach_shm(w);
         w->shm = m; w->shm_fd = fd; w->shm_len = need; w->shm_w = a.w; w->shm_h = a.h; w->shm_stride = a.stride;
         w->gpu_res = 0;
+        take_shm(w, 0, 0, w->w, w->h);
         content_damage(w, 0, 0, w->w, w->h);
         damage_win(w);
         break;
@@ -789,6 +781,7 @@ static void handle_msg(struct client *c, const struct zwm_hdr *h, const uint8_t 
         struct zwm_m_rect r; memcpy(&r, p, sizeof r);
         if (r.w <= 0 || r.h <= 0) return;
         if (w->gpu_res) w->frame_wanted = 1;
+        else if (w->shm) { take_shm(w, r.x, r.y, r.w, r.h); send_msg(c, ZWM_S_TAKEN, w->id, NULL, 0); }
         content_damage(w, r.x, r.y, r.w, r.h);
         damage(w->x + r.x, w->y + r.y, r.w, r.h);
         break;
@@ -873,7 +866,7 @@ static void accept_client(void)
     fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
     c->fd = fd;
     clients[slot] = c;
-    struct zwm_m_hello hello = { fb.w, fb.h, S, gpu ? ZWM_HELLO_GPU : 0 };
+    struct zwm_m_hello hello = { fb.w, fb.h, S, (gpu ? ZWM_HELLO_GPU : 0) | ZWM_HELLO_TAKEN };
     send_msg(c, ZWM_S_HELLO, 0, &hello, sizeof hello);
 }
 

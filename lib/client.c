@@ -27,6 +27,7 @@ struct zwm {
     size_t q_len, q_cap, q_head;
     struct zwm_m_window wins[32];   /* the last ZWM_S_WINDOWS list */
     uint32_t frames;            /* ZWM_S_FRAME messages seen: counted, never queued */
+    uint32_t taken;             /* ZWM_S_TAKEN likewise */
 };
 
 static int send_all(zwm *c, const void *buf, size_t len)
@@ -145,8 +146,8 @@ again:
     struct zwm_hdr h;
     memcpy(&h, c->in, sizeof h);
     if (c->in_len < sizeof h + h.len) return 0;
-    if (h.type == ZWM_S_FRAME) {
-        c->frames++;
+    if (h.type == ZWM_S_FRAME || h.type == ZWM_S_TAKEN) {
+        if (h.type == ZWM_S_FRAME) c->frames++; else c->taken++;
         memmove(c->in, c->in + sizeof h + h.len, c->in_len - sizeof h - h.len);
         c->in_len -= sizeof h + h.len;
         goto again;
@@ -203,14 +204,15 @@ int zwm_next_event(zwm *c, zwm_event *ev, int block)
 
 uint32_t zwm_frames(zwm *c) { return c->frames; }
 
-int zwm_wait_frame(zwm *c, uint32_t since, int timeout_ms)
+/* Until *count moves on from `since`, reading (and queueing) everything else. */
+static int wait_count(zwm *c, const uint32_t *count, uint32_t since, int timeout_ms)
 {
     struct timespec t0, t;
     clock_gettime(CLOCK_MONOTONIC, &t0);
     for (;;) {
         zwm_event ev;
         while (parse_one(c, &ev)) enqueue(c, &ev);     /* everything else stays in order for zwm_next_event */
-        if (c->frames != since) return 0;
+        if (*count != since) return 0;
         clock_gettime(CLOCK_MONOTONIC, &t);
         int left = timeout_ms - (int)((t.tv_sec - t0.tv_sec) * 1000 + (t.tv_nsec - t0.tv_nsec) / 1000000);
         if (left <= 0) return 1;
@@ -218,6 +220,8 @@ int zwm_wait_frame(zwm *c, uint32_t since, int timeout_ms)
         if (poll(&pf, 1, left) > 0 && fill(c, 0) != 0) return -1;
     }
 }
+
+int zwm_wait_frame(zwm *c, uint32_t since, int timeout_ms) { return wait_count(c, &c->frames, since, timeout_ms); }
 
 int zwm_create(zwm *c, int w, int h, const char *title, uint32_t flags, struct zwm_m_geom *geom)
 {
@@ -336,9 +340,12 @@ void zwm_flush_rect(zwm *c, int win, const zwm_surface *s, int x, int y, int w, 
     if (x + w > s->w) w = s->w - x;
     if (y + h > s->h) h = s->h - y;
     if (w <= 0 || h <= 0) return;
-    if (s->conn) {                          /* shared: the server has the pixels already */
+    if (s->conn) {                          /* shared: the server copies them out */
         struct zwm_m_rect r = { x, y, w, h };
+        uint32_t since = c->taken;
         send_msg(c, ZWM_C_DAMAGE, (uint32_t)win, &r, sizeof r);
+        /* and until it has, drawing the next frame would show half of it */
+        if (hello_flags & ZWM_HELLO_TAKEN) wait_count(c, &c->taken, since, 250);
         return;
     }
     zwm_blit(c, win, x, y, w, h, s->pix + (size_t)y * s->w + x, s->w);
