@@ -41,6 +41,7 @@ enum {
     ZWM_C_MAXIMIZE,         /* - : toggle filling the work area (any window: a panel's menu does it too) */
     ZWM_C_ATTACH_GPU,       /* zwm_m_attach_gpu: the window's pixels are this GPU resource (only if the hello says ZWM_HELLO_GPU); DAMAGE says when a frame is done */
     ZWM_C_CLOSE,            /* header win = a window (any client's): ask its owner to close it (it gets ZWM_S_CLOSE) */
+    ZWM_C_KEY,              /* zwm_m_key: to the focused window, as if typed (an on-screen keyboard) */
     /* server -> client */
     ZWM_S_CREATED = 0x100,  /* zwm_m_geom: the id is in the header */
     ZWM_S_KEY,              /* zwm_m_key */
@@ -129,6 +130,7 @@ void zwm_activate(zwm *c, int win);         /* any window: raise, unminimize, fo
 void zwm_minimize(zwm *c, int win);
 void zwm_maximize(zwm *c, int win);         /* toggles; any window */
 void zwm_close(zwm *c, int win);            /* any window: its owner is asked to close it, as by the close box */
+void zwm_type_key(zwm *c, uint32_t sym, uint32_t mods, int down);   /* a key to the focused window, as if typed (an on-screen keyboard) */
 
 /* Copies a w*h block of pixels (rows `stride` pixels apart) to (x, y) of
  * the window, over the socket. */

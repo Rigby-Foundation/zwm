@@ -811,6 +811,12 @@ static void handle_msg(struct client *c, const struct zwm_hdr *h, const uint8_t 
         if (t && decorated(t)) win_maximize(t);
         break;
     }
+    case ZWM_C_KEY: {                       /* typed on screen: where the focus is, if it is someone else's */
+        if (!focus || focus->owner == c || h->len < sizeof(struct zwm_m_key)) return;
+        struct zwm_m_key k; memcpy(&k, p, sizeof k);
+        send_msg(focus->owner, ZWM_S_KEY, focus->id, &k, sizeof k);
+        break;
+    }
     case ZWM_C_CLOSE: {
         struct win *t = win_by_id_any(h->win);
         if (t) send_msg(t->owner, ZWM_S_CLOSE, t->id, NULL, 0);

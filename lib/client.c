@@ -251,6 +251,11 @@ void zwm_activate(zwm *c, int win) { send_msg(c, ZWM_C_ACTIVATE, (uint32_t)win, 
 void zwm_minimize(zwm *c, int win) { send_msg(c, ZWM_C_MINIMIZE, (uint32_t)win, NULL, 0); }
 void zwm_maximize(zwm *c, int win) { send_msg(c, ZWM_C_MAXIMIZE, (uint32_t)win, NULL, 0); }
 void zwm_close(zwm *c, int win) { send_msg(c, ZWM_C_CLOSE, (uint32_t)win, NULL, 0); }
+void zwm_type_key(zwm *c, uint32_t sym, uint32_t mods, int down)
+{
+    struct zwm_m_key k = { sym, mods, (uint32_t)down, 0 };
+    send_msg(c, ZWM_C_KEY, 0, &k, sizeof k);
+}
 void zwm_set_title(zwm *c, int win, const char *title) { send_msg(c, ZWM_C_TITLE, (uint32_t)win, title, strlen(title) + 1); }
 void zwm_move(zwm *c, int win, int x, int y) { struct zwm_m_point p = { x, y }; send_msg(c, ZWM_C_MOVE, (uint32_t)win, &p, sizeof p); }
 
